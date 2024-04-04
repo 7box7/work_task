@@ -6,6 +6,7 @@ Rails.application.routes.draw do
     resources :participants, only: [:create, :show, :update, :delete]
     resources :reg, only: [:create]
     resources :auth, only: [:create, :destroy]
+    delete ":auth", to: "auth#destroy"
   end
 
 end
