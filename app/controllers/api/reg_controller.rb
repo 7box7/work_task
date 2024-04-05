@@ -3,7 +3,10 @@ class Api::RegController < ApplicationController
     def create
         puts params
         if check_params
-            @user = User.new(user_params)
+            o = [('a'..'z'), ('A'..'Z')].map(&:to_a).flatten
+            string = (0...32).map { o[rand(o.length)] }.join
+            
+            @user = User.new(fio: user_params[:fio], email: user_params[:email], password: user_params[:password], teacher: user_params[:teacher], jwt_validation: string)
             if @user.save
                 render json: @user, status: :ok
             else

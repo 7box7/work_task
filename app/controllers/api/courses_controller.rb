@@ -1,2 +1,93 @@
 class Api::CoursesController < ApplicationController
+    before_action :check_auth
+
+    def index
+        id_teach = 0
+        id_stud = 0
+        pagination = get_pagination{'page' => 1, "limit" => 50}
+
+        if params.include? :pagination
+            pagination = {'page' => params[:pagination][:page], "limit" => params[:pagination][:limit] % 1000}
+        end
+
+        if params.include? :id_teach
+            id_teach = params[:id_teach]
+        end
+
+        if params.include? :id_stud
+            id_stud = params[:id_stud]
+        end
+
+        if (id_stud and id_teach)
+            courses = Course.where(user_id: id_teach).joins(:participants).where(user_id: id_studh).take(pagination[:limit])
+        elsif id_stud
+            courses = Course.joins(:participants).where(user_id: id_studh).take(pagination[:limit])
+        elsif id_teach
+            courses = Course.where(user_id: id_teach).take(pagination[:limit])
+        else
+            courses = Course.take(pagination[:limit])
+        end
+        
+        if courses
+            render json: courses
+        else
+            render status: :unprocessable_entity
+        end
+
+    end
+
+    def create
+        if check_token
+            token = request.headers['Authorization'][7..-1]
+            decoded_token = JWT.decode token, nil, false
+            user = User.find_by(id: decoded_token[0]["id"], jwt_validation: decoded_token[0]["jwt_validation"])
+            if user
+                if check_course_params
+                    if user.teacher
+                        @course = Course.new(:title => course_params[:title], :description => course_params[:description], :user => user)
+                        @course.save
+                        render json: {
+                            fio_of_teacher: user.fio,
+                            name_of_course: @course.title,
+                            description_of_course: @course.description
+                        }
+                    else
+                        render status: :forbidden
+                    end
+                else
+                    render status: :bad_request
+                end
+            else
+                render status: :unauthorized
+            end
+        else
+            render status: :unauthorized
+        end
+    end
+
+    private def check_auth
+        if check_token
+            token = request.headers['Authorization'][7..-1]
+            decoded_token = JWT.decode token, nil, false
+            @user = User.find_by(id: decoded_token[0]["id"], jwt_validation: decoded_token[0]["jwt_validation"])
+            if !@user
+                render status: :unauthorized
+            end
+        else
+            render status: :unauthorized
+        end
+    end
+
+    private def check_course_params
+        return ((params["course"].include? :title) and (params["course"].include? :description))
+    end
+
+    private def course_params
+        params.require(:course).permit(:title, :description)
+    end
+
+    private def check_token
+        return request.headers['Authorization']
+    end
+
 end

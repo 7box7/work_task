@@ -10,31 +10,23 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2024_04_04_075729) do
+ActiveRecord::Schema[7.1].define(version: 2024_04_04_152818) do
   create_table "courses", force: :cascade do |t|
     t.string "title"
     t.text "description"
-    t.integer "teacher_id", null: false
+    t.integer "user_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["teacher_id"], name: "index_courses_on_teacher_id"
+    t.index ["user_id"], name: "index_courses_on_user_id"
   end
 
   create_table "participants", force: :cascade do |t|
-    t.integer "student_id", null: false
+    t.integer "user_id", null: false
     t.integer "course_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["course_id"], name: "index_participants_on_course_id"
-    t.index ["student_id"], name: "index_participants_on_student_id"
-  end
-
-  create_table "tokens", force: :cascade do |t|
-    t.integer "user_id", null: false
-    t.string "token"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["user_id"], name: "index_tokens_on_user_id"
+    t.index ["user_id"], name: "index_participants_on_user_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -42,13 +34,12 @@ ActiveRecord::Schema[7.1].define(version: 2024_04_04_075729) do
     t.string "email"
     t.string "password"
     t.boolean "teacher"
+    t.string "jwt_validation"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["email"], name: "index_users_on_email", unique: true
   end
 
-  add_foreign_key "courses", "teachers"
+  add_foreign_key "courses", "users"
   add_foreign_key "participants", "courses"
-  add_foreign_key "participants", "students"
-  add_foreign_key "tokens", "users"
+  add_foreign_key "participants", "users"
 end
