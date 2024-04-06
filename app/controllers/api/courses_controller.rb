@@ -2,120 +2,119 @@ class Api::CoursesController < ApplicationController
     before_action :check_auth
 
     def index
-        id_teach = 0
-        id_stud = 0
-        pagination = {:page => 1, :limit => 50}
-
-        if params.include? :pagination
-            pagination = {:page => params[:pagination][:page], :limit => params[:pagination][:limit] % 1000}
-        end
-
-        if params.include? :id_teach
-            id_teach = params[:id_teach]
-        end
-
-        if params.include? :id_stud
-            id_stud = params[:id_stud]
-        end
+        filters = get_filters()
+        courses = get_courses(filters)
         
-        if (id_stud != 0) and (id_teach != 0)
-            courses = Course.where(user_id: id_teach).joins(:participants).where("participants.user_id" => id_stud).offset((pagination[:page] - 1) * pagination[:limit]).take(pagination[:limit])
-        elsif (id_stud != 0)
-            courses = Course.joins(:participants).where("participants.user_id" => id_stud).offset((pagination[:page] - 1) * pagination[:limit]).take(pagination[:limit])
-        elsif (id_teach != 0)
-            courses = Course.where(user_id: id_teach).offset((pagination[:page] - 1) * pagination[:limit]).take(pagination[:limit])
-        else
-            courses = Course.offset((pagination[:page] - 1) * pagination[:limit]).take(pagination[:limit])
-        end
+        return (render status: :unprocessable_entity) if !courses
         
-        if courses
-            render json: courses, status: :ok
-        else
-            render status: :unprocessable_entity
-        end
-
+        render json: courses, status: :ok
     end
 
 
     def show
         course = Course.find(params[:id])
-        if course
-            teacher = User.find(course.user_id)
-            students = Participant.where(:course => course.id)
-            number = 0
-            if students
-                number = students.count
-            end
-            render json: {
-                title:  course.title,
-                description: course.description,
-                fio_of_teacher: teacher.fio,
-                number_of_students: number
-            }, status: :ok
-        else
-            render status: :unprocessable_entity
-        end
+        return (render status: :unprocessable_entity) if !course
+
+        render json: {
+            title:  course.title,
+            description: course.description,
+            fio_of_teacher: User.find(course.user_id).fio,
+            number_of_students: Course.sum_students(params[:id])
+        }, status: :ok
+        
     end
 
 
     def subscribe
-        if !@user.teacher
-            course = Course.find(params[:course_id])
-            if course
-                if !Participant.find_by(:user => @user, :course => course)
-                    participant = Participant.new(:user => @user, :course => course)
-                    participant.save
-                    render status: :ok
-                else
-                    render status: :unprocessable_entity
-                end
-            else
-                render status: :unprocessable_entity
-            end
-        else
-            render status: :forbidden
-        end
+        return (render status: :forbidden) if @user.teacher
+        
+        course = Course.find(params[:course_id])
+        return (render status: :unprocessable_entity) if !course
+        return (render status: :unprocessable_entity) if Participant.find_by(:user => @user, :course => course)
+        
+        participant = Participant.new(:user => @user, :course => course)
+        participant.save
+        render status: :ok
     end
 
 
     def create
-        if check_course_params
-            if @user.teacher
-                @course = Course.new(:title => course_params[:title], :description => course_params[:description], :user => @user)
-                @course.save
-                render json: {
-                    fio_of_teacher: @user.fio,
-                    name_of_course: @course.title,
-                    description_of_course: @course.description
-                }, status: :ok
-            else
-                render status: :forbidden
-            end
-        else
-            render status: :bad_request
-        end
+        return (render status: :bad_request) if !check_course_params
+        return (render status: :forbidden) if !@user.teacher
+
+        @course = Course.new(:title => course_params[:title], :description => course_params[:description], :user => @user)
+        @course.save
+        render json: {
+            fio_of_teacher: @user.fio,
+            name_of_course: @course.title,
+            description_of_course: @course.description
+        }, status: :ok
     end
 
-    private def check_auth
-        if check_token
-            token = request.headers['Authorization'][7..-1]
-            decoded_token = JWT.decode token, nil, false
-            @user = User.find_by(id: decoded_token[0]["id"], jwt_validation: decoded_token[0]["jwt_validation"])
-            if !@user
-                render status: :unauthorized
-            end
+    
+    private def get_courses(filters)
+        pagin_offset = (filters[:pagination][:page] - 1) * filters[:pagination][:limit]
+
+        if (filters[:id_stud] != 0) and (filters[:id_teach] != 0)
+            courses = Course.where(user_id: filters[:id_teach]).joins(:participants).where("participants.user_id" => filters[:id_stud]).offset(pagin_offset).take(filters[:pagination][:limit])
+        elsif (filters[:id_stud] != 0)
+            courses = Course.joins(:participants).where("participants.user_id" => filters[:id_stud]).offset(pagin_offset).take(filters[:pagination][:limit])
+        elsif (filters[:id_teach] != 0)
+            courses = Course.select("users.fio, courses.title, courses.description, courses.id").where(user_id: filters[:id_teach]).joins(:user).offset(pagin_offset).take(filters[:pagination][:limit])
         else
+            courses = Course.offset(pagin_offset).take(filters[:pagination][:limit])
+        end
+
+        return courses
+    end
+
+
+    private def get_filters
+        return {:id_stud => get_id_stud(), :id_teach => get_id_teach(), :pagination => get_pagination()}
+    end
+
+
+    private def get_id_stud
+        return (params.include? :id_stud) ? params[:id_stud] : 0
+    end
+
+
+    private def get_id_teach
+        return (params.include? :id_teach) ? params[:id_teach] : 0
+    end
+
+
+    private def get_pagination
+        return (params.include? :pagination) ? {:page => params[:pagination][:page], :limit => params[:pagination][:limit] % 1000} : {:page => 1, :limit => 50}
+    end
+
+
+    private def check_auth
+        return (render status: :unauthorized) if !check_token
+
+        token = request.headers['Authorization'][7..-1]
+        begin
+            decoded_token = JWT.decode token, nil, false
+        rescue JWT::DecodeError
+            return (render status: :unauthorized)
+        end
+
+        @user = User.find_by(id: decoded_token[0]["id"], jwt_validation: decoded_token[0]["jwt_validation"])
+        if !@user
             render status: :unauthorized
         end
     end
+
 
     private def check_course_params
         return ((params["course"].include? :title) and (params["course"].include? :description))
     end
 
+
     private def course_params
         params.require(:course).permit(:title, :description)
     end
+
 
     private def check_token
         return request.headers['Authorization']
